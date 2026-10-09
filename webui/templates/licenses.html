@@ -20,18 +20,36 @@
         <div class="max-w-6xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
             <img src="{{ url_for('static', filename='assets/kelvex_core.svg') }}" alt="Kelvex Core" class="h-9">
             <nav class="flex items-center gap-5 text-sm font-gui text-k_text_mut">
-                <a href="/" class="hover:text-k_text">{{ t('nav.dashboard') }}</a>
+                <a href="/" class="hover:text-k_text flex items-center gap-1.5">
+                    <img src="{{ url_for('static', filename='assets/icons/icon_09_dashboard.svg') }}" alt="" class="h-3.5 w-3.5 opacity-70">
+                    {{ t('nav.dashboard') }}
+                </a>
                 <a href="/agents" class="hover:text-k_text flex items-center gap-1.5">
                     <img src="{{ url_for('static', filename='assets/icons/icon_01_endpoint.svg') }}" alt="" class="h-3.5 w-3.5 opacity-70">
                     {{ t('nav.agents') }}
                 </a>
-                <a href="/updates" class="hover:text-k_text">{{ t('nav.updates') }}</a>
-                <a href="/licenses" class="text-k_text">{{ t('nav.licenses') }}</a>
+                <a href="/updates" class="hover:text-k_text flex items-center gap-1.5">
+                    <img src="{{ url_for('static', filename='assets/icons/icon_10_refresh.svg') }}" alt="" class="h-3.5 w-3.5 opacity-70">
+                    {{ t('nav.updates') }}
+                </a>
+                <a href="/licenses" class="text-k_text flex items-center gap-1.5">
+                    <img src="{{ url_for('static', filename='assets/icons/icon_11_key.svg') }}" alt="" class="h-3.5 w-3.5">
+                    {{ t('nav.licenses') }}
+                </a>
+                <a href="/account" class="hover:text-k_text flex items-center gap-1.5">
+                    <img src="{{ url_for('static', filename='assets/icons/icon_12_account.svg') }}" alt="" class="h-3.5 w-3.5 opacity-70">
+                    {{ t('nav.account') }}
+                </a>
             </nav>
+            <div class="flex items-center gap-4">
+            <form method="post" action="/logout">
+                <button type="submit" class="text-xs text-k_text_mut hover:text-k_text font-mono">{{ t('nav.logout') }}</button>
+            </form>
             <div class="flex items-center gap-1.5 font-mono text-xs">
                 <a href="/lang/en" class="{{ 'text-k_normal' if current_lang() == 'en' else 'text-k_text_mut hover:text-k_text' }}">EN</a>
                 <span class="text-k_border">/</span>
                 <a href="/lang/de" class="{{ 'text-k_normal' if current_lang() == 'de' else 'text-k_text_mut hover:text-k_text' }}">DE</a>
+            </div>
             </div>
         </div>
     </header>

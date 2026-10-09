@@ -1,8 +1,14 @@
-"""Minimales lokales Dashboard für Phase 1 ("Sichtbarkeit") aus KELVEX_ROADMAP.md: zeigt,
-welche lokalen Prozesse mit bekannten KI-/LLM-API-Diensten sprechen. Erster echter
-Baustein der später geplanten "Web-GUI (Verwaltung)" -- bewusst klein (kein Auth auf dem
-Dashboard selbst, keine Nutzerverwaltung), läuft nur lokal zum Testen (siehe CLAUDE.md:
-keine Deployments für diesen Fork).
+"""Dashboard für Phase 1 ("Sichtbarkeit") aus KELVEX_ROADMAP.md: zeigt, welche lokalen
+Prozesse mit bekannten KI-/LLM-API-Diensten sprechen. Erster echter Baustein der später
+geplanten "Web-GUI (Verwaltung)".
+
+Rudimentäre, aber sichere Admin-Authentifizierung (siehe core/auth.py): ein einzelnes
+Passwort, bei der Ersteinrichtung erzwungen (/setup), danach Session-Cookie-Login
+(/login). Betrifft NUR die Dashboard-UI/Admin-API -- die Agenten-Endpunkte
+(/api/agent/register, /api/agent/report, /api/agent/verify-otp) und die
+Download-/Installer-Routen bleiben absichtlich ohne Session-Login erreichbar, da
+Agenten sich über ihr eigenes Bearer-Token authentifizieren, nicht über eine
+Browser-Session (siehe OPEN_ENDPOINTS unten).
 
 Reiner Lesezugriff auf die Detections-Tabelle -- der Sampler läuft im lokalen Agenten
 (desktop_agent/tray.py, der "Desktop-GUI (Endpoint-Agent)" aus der Roadmap), der sich
@@ -26,8 +32,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import requests  # noqa: E402
-from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, send_file  # noqa: E402
+from flask import (  # noqa: E402
+    Flask, Response, jsonify, make_response, redirect, render_template, request, send_file, session, url_for,
+)
 
+import core.auth as auth  # noqa: E402
 import core.version  # noqa: E402
 from config.settings import DB_FILE  # noqa: E402
 from core.licensing.fingerprint import HardwareIdUnavailableError, compute_hardware_id  # noqa: E402
@@ -63,8 +72,114 @@ OTP_ATTEMPT_WINDOW_SECONDS = 300
 # Funktion, sondern dieselbe bestehende Vertrauensgrenze wie bei approve/revoke oben).
 _otp_attempts: dict[int, list[float]] = {}
 
+# Login-Rate-Limiting (siehe login()) -- analog zum OTP-Versuchszähler oben, nach
+# Quell-IP statt Agent-ID, da es hier kein Pendant zu einer Agent-ID gibt (nur EIN
+# geteiltes Admin-Passwort, keine Nutzerverwaltung).
+LOGIN_MAX_ATTEMPTS = 10
+LOGIN_ATTEMPT_WINDOW_SECONDS = 300
+_login_attempts: dict[str, list[float]] = {}
+
+# Endpunkte, die OHNE Dashboard-Login erreichbar bleiben müssen: Agenten authentifizieren
+# sich über ihr eigenes Bearer-Token (nie über die Browser-Session), die Download-/
+# Installer-Routen werden direkt von install.sh/.bat bzw. curl aufgerufen (kein Browser,
+# keine Session-Cookies) -- siehe auch Moduldokstring oben.
+OPEN_ENDPOINTS = {
+    "login", "setup", "logout", "static", "set_lang",
+    "api_agent_register", "api_agent_report", "api_agent_verify_otp",
+    "download_agent", "install_linux", "install_windows",
+}
+
 app = Flask(__name__)
+app.secret_key = auth.load_or_create_secret_key()
 db = Database(DB_FILE)
+
+
+@app.before_request
+def _require_auth():
+    if request.endpoint in OPEN_ENDPOINTS or request.endpoint is None:
+        return
+    if not auth.has_password():
+        return redirect(url_for("setup"))
+    if not session.get("authenticated"):
+        return redirect(url_for("login", next=request.path))
+
+
+@app.route("/setup", methods=["GET", "POST"])
+def setup():
+    """Nur erreichbar, solange noch KEIN Passwort existiert (siehe _require_auth()) --
+    danach leitet dieselbe Route auf /login weiter, damit ein direkt aufgerufenes
+    /setup nach der Ersteinrichtung nicht versehentlich ein zweites Mal ein Passwort
+    setzen lässt."""
+    if auth.has_password():
+        return redirect(url_for("login"))
+
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm", "")
+        if len(password) < auth.MIN_PASSWORD_LENGTH:
+            error = "password_too_short"
+        elif password != confirm:
+            error = "password_mismatch"
+        else:
+            auth.set_password(password)
+            session["authenticated"] = True
+            return redirect(url_for("dashboard"))
+
+    return render_template("setup.html", error=error, min_length=auth.MIN_PASSWORD_LENGTH)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not auth.has_password():
+        return redirect(url_for("setup"))
+
+    error = None
+    if request.method == "POST":
+        now = time.time()
+        ip = request.remote_addr or "unknown"
+        attempts = [t for t in _login_attempts.get(ip, []) if now - t < LOGIN_ATTEMPT_WINDOW_SECONDS]
+        if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+            error = "too_many_attempts"
+        else:
+            attempts.append(now)
+            _login_attempts[ip] = attempts
+            if auth.verify_password(request.form.get("password", "")):
+                session["authenticated"] = True
+                next_path = request.args.get("next")
+                return redirect(next_path if next_path else url_for("dashboard"))
+            error = "invalid_password"
+
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/account", methods=["GET", "POST"])
+def account():
+    error = None
+    if request.method == "POST":
+        current = request.form.get("current_password", "")
+        new = request.form.get("new_password", "")
+        confirm = request.form.get("confirm", "")
+        if not auth.verify_password(current):
+            error = "current_password_wrong"
+        elif len(new) < auth.MIN_PASSWORD_LENGTH:
+            error = "password_too_short"
+        elif new != confirm:
+            error = "password_mismatch"
+        else:
+            auth.set_password(new)
+            # Neuer Secret Key -- invalidiert sofort ALLE bestehenden Sessions (auch
+            # diese hier), ein kostenloser "überall abmelden"-Effekt bei Passwortwechsel.
+            app.secret_key = auth.rotate_secret_key()
+            session.clear()
+            return redirect(url_for("login"))
+    return render_template("account.html", error=error, min_length=auth.MIN_PASSWORD_LENGTH)
 
 
 def current_lang() -> str:
@@ -352,6 +467,23 @@ fi
 
 python3 -c "import zipfile, sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$TMP_ZIP" "$INSTALL_DIR"
 
+# Laufende Instanz stoppen (PID-Datei statt pkill -f-Substring-Match -- robuster,
+# plattformübergreifend einheitlich, siehe desktop_agent/tray.py::PID_FILE). Nötig,
+# wenn ein Admin dieses Skript manuell gegen einen noch laufenden Agenten erneut
+# ausführt -- beim automatischen Self-Update (desktop_agent/self_update.py) hat sich
+# der alte Prozess bereits selbst beendet, bevor dieses Skript hier läuft, daher meist
+# ein No-Op, aber als Absicherung immer ausgeführt.
+PID_FILE="$HOME/.config/kelvex/agent.pid"
+if [ -f "$PID_FILE" ]; then
+    OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+        echo "Beende laufende Agent-Instanz (PID $OLD_PID)..."
+        kill "$OLD_PID" 2>/dev/null || true
+        sleep 1
+    fi
+    rm -f "$PID_FILE"
+fi
+
 echo "Richte virtuelle Umgebung ein..."
 # Eigenes venv statt "pip install --user" -- auf Debian/Ubuntu 12+ ("externally-managed-
 # environment", PEP 668) schlägt --user sonst fehl, ohne venv müsste der Nutzer sich
@@ -409,6 +541,15 @@ if errorlevel 1 (
 
 powershell -NoProfile -Command "Expand-Archive -Path '%TEMP%\\kelvex-agent.zip' -DestinationPath '%INSTALL_DIR%' -Force"
 del "%TEMP%\\kelvex-agent.zip"
+
+REM Laufende Instanz stoppen (PID-Datei statt Prozessname -- robuster, siehe
+REM desktop_agent/tray.py::PID_FILE). Nutzt die bereits im System vorhandene
+REM Python-Installation (gerade erst oben geprueft), kein neues Werkzeug noetig.
+set "PID_FILE=%USERPROFILE%\\.config\\kelvex\\agent.pid"
+if exist "%PID_FILE%" (
+    for /f %%P in ('type "%PID_FILE%"') do taskkill /F /PID %%P >nul 2>&1
+    del "%PID_FILE%" >nul 2>&1
+)
 
 echo Installiere Abhaengigkeiten...
 python -m pip install --quiet --user -r "%INSTALL_DIR%\\requirements.txt"

@@ -32,6 +32,7 @@ lesen -- wird beim Start aus der Config übernommen und bei einem Sprachwechsel 
 Einstellungen-Dialog sofort aktualisiert (siehe _open_settings())."""
 from __future__ import annotations
 
+import os
 import socket
 import sys
 import threading
@@ -49,14 +50,17 @@ import requests  # noqa: E402
 from PIL import Image, ImageTk  # noqa: E402
 
 from core.security.connection_monitor import sample_once  # noqa: E402
+from desktop_agent import self_update  # noqa: E402
 from desktop_agent.agent_config import AgentConfig  # noqa: E402
 from desktop_agent._version import __version__ as AGENT_VERSION  # noqa: E402
 from desktop_agent.i18n import t  # noqa: E402
-from desktop_agent.setup_dialog import ask_core_url, show_about  # noqa: E402
+from desktop_agent.setup_dialog import ask_core_url, ask_otp, show_about  # noqa: E402
 
 SAMPLE_INTERVAL_SECONDS = 30
 REGISTER_RETRY_SECONDS = 30
+OTP_MAX_ATTEMPTS = 3
 ICON_PATH = Path(__file__).resolve().parent / "agent_icon.png"
+PID_FILE = Path.home() / ".config" / "kelvex" / "agent.pid"
 
 # Markenfarben (siehe deploy/site/assets/tailwind-config.js -- dieselben Tokens, hier als
 # feste Hex-Werte, da tkinter kein CSS/Tailwind kennt).
@@ -80,6 +84,9 @@ _notified: set[tuple] = set()
 # ersetzt statt sich zu überlagern (bei mehreren neuen Erkennungen im selben Takt).
 _active_popup: tk.Toplevel | None = None
 _popup_icon_image = None  # Referenz halten -- sonst sammelt Tkinter das PhotoImage vorzeitig ein
+# Verhindert, dass ein Self-Update mehrfach angestoßen wird, falls der Spawn selbst
+# fehlschlägt und der Agent weiterläuft (siehe _agent_loop()).
+_update_in_progress = threading.Event()
 
 
 def _set_status(icon, key: str) -> None:
@@ -104,23 +111,27 @@ def _register(config: AgentConfig) -> dict:
         return {"status": "unreachable"}
 
 
-def _report(config: AgentConfig, connections: list) -> bool:
-    """True bei Erfolg. False bei 401/403 (Token ungültig/widerrufen) -- Aufrufer muss
-    dann neu registrieren. Andere Fehler (Netzwerk) gelten als vorübergehend, nicht als
-    Widerruf, und werden beim nächsten Takt erneut versucht."""
+def _report(config: AgentConfig, connections: list) -> tuple[bool, Optional[dict]]:
+    """(ok, response_json). ok=False bei 401/403 (Token ungültig/widerrufen) -- Aufrufer
+    muss dann neu registrieren. Andere Fehler (Netzwerk) gelten als vorübergehend, nicht
+    als Widerruf, und werden beim nächsten Takt erneut versucht -- response_json ist
+    dann None, der Aufrufer wertet in dem Fall kein config/update-Feld aus."""
     try:
         resp = requests.post(
             f"{config.core_url}/api/agent/report",
-            json={"detections": [asdict(c) for c in connections]},
+            json={
+                "detections": [asdict(c) for c in connections],
+                "agent_version": AGENT_VERSION,
+            },
             headers={"Authorization": f"Bearer {config.token}"},
             timeout=10,
         )
         if resp.status_code in (401, 403):
-            return False
+            return False, None
         resp.raise_for_status()
+        return True, resp.json()
     except requests.RequestException:
-        pass  # vorübergehender Netzwerkfehler -- nächster Takt versucht es erneut
-    return True
+        return True, None  # vorübergehender Netzwerkfehler -- nächster Takt versucht es erneut
 
 
 def _show_popup(root: tk.Tk, config: AgentConfig, lines: list[tuple[str, str]]) -> None:
@@ -206,6 +217,20 @@ def _notify_new(root: tk.Tk, config: AgentConfig, connections: list) -> None:
         root.after(0, lambda: _show_popup(root, config, new_lines))
 
 
+def _apply_pushed_config(icon, config: AgentConfig, response: dict) -> None:
+    """Generisch gehalten -- nur bekannte Schlüssel werden interpretiert, alles andere
+    wird ignoriert, damit künftige Core-seitige Einstellungen ohne Protokolländerung
+    dazukommen können (siehe webui/app.py::api_agent_report())."""
+    global _current_lang
+    config_patch = response.get("config") or {}
+    new_lang = config_patch.get("language")
+    if new_lang and new_lang != config.language:
+        config.language = new_lang
+        config.save()
+        _current_lang = new_lang
+        icon.update_menu()  # Menü-Beschriftungen sofort auf die neue Sprache umstellen
+
+
 def _agent_loop(icon, root: tk.Tk, config: AgentConfig) -> None:
     while not _stop_event.is_set():
         if config.token is None:
@@ -228,7 +253,7 @@ def _agent_loop(icon, root: tk.Tk, config: AgentConfig) -> None:
             except Exception:  # noqa: BLE001
                 conns = []
             if conns:
-                ok = _report(config, conns)
+                ok, response = _report(config, conns)
                 if not ok:
                     # Token widerrufen -- zurück auf Anfang, erneut registrieren
                     config.token = None
@@ -236,6 +261,13 @@ def _agent_loop(icon, root: tk.Tk, config: AgentConfig) -> None:
                     _set_status(icon, "status.reregistering")
                     _stop_event.wait(REGISTER_RETRY_SECONDS)
                     continue
+                if response is not None:
+                    _apply_pushed_config(icon, config, response)
+                    update_info = response.get("update")
+                    if update_info and not _update_in_progress.is_set():
+                        _update_in_progress.set()
+                        self_update.trigger_self_update(config, icon, root)
+                        _update_in_progress.clear()  # nur erreicht, wenn der Spawn selbst fehlschlug
                 _notify_new(root, config, conns)
         _stop_event.wait(SAMPLE_INTERVAL_SECONDS)
 
@@ -281,9 +313,53 @@ def _ask_core_url_threadsafe(root: tk.Tk, initial: str, lang: str, timeout: floa
     return result_holder.get("result", (None, lang))
 
 
+def _verify_otp_threadsafe(root: tk.Tk, config: AgentConfig, timeout: float = 300) -> bool:
+    """Gleiches root.after()+threading.Event-Brückenmuster wie
+    _ask_core_url_threadsafe() -- aus dem pystray-Menü-Thread aufgerufen, der Dialog
+    selbst darf aber nur auf dem Haupt-Thread entstehen. Online-Check gegen Core: bei
+    Nichterreichbarkeit KEIN Offline-Rückfall, der Dialog bleibt dann einfach gesperrt."""
+    error_key: Optional[str] = None
+    for _attempt in range(OTP_MAX_ATTEMPTS):
+        result_holder: dict = {}
+        done = threading.Event()
+
+        def _show() -> None:
+            result_holder["code"] = ask_otp(root, config.language, error_key)
+            done.set()
+
+        root.after(0, _show)
+        done.wait(timeout=timeout)
+        code = result_holder.get("code")
+        if not code:
+            return False  # abgebrochen
+
+        try:
+            resp = requests.post(
+                f"{config.core_url}/api/agent/verify-otp",
+                json={"code": code},
+                headers={"Authorization": f"Bearer {config.token}"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            if resp.json().get("ok"):
+                return True
+            error_key = "otp.invalid_code"
+        except requests.RequestException:
+            # Zeigt die Fehlermeldung einmalig per root.after() an (kein weiterer
+            # Versuch bei Netzwerkfehler -- "nicht erreichbar" ist kein "falscher Code").
+            done2 = threading.Event()
+            root.after(0, lambda: (ask_otp(root, config.language, "otp.core_unreachable"), done2.set()))
+            done2.wait(timeout=timeout)
+            return False
+    return False
+
+
 def _open_settings(icon, root: tk.Tk, item) -> None:
     global _current_lang
     config = AgentConfig.load()
+    if config.core_url:  # Ersteinrichtung schon erfolgt -- Sperre greift
+        if not _verify_otp_threadsafe(root, config):
+            return
     new_url, new_lang = _ask_core_url_threadsafe(root, config.core_url, config.language)
 
     changed = False
@@ -330,6 +406,10 @@ def _quit_label(item) -> str:
 def _quit(icon, root: tk.Tk, item) -> None:
     _stop_event.set()
     icon.stop()
+    try:
+        PID_FILE.unlink()
+    except OSError:
+        pass  # bereits entfernt oder nie geschrieben -- idempotent
     root.after(0, root.quit)
 
 
@@ -375,6 +455,16 @@ def main() -> None:
         pystray.MenuItem(_quit_label, lambda icon, item: _quit(icon, root, item)),
     )
     icon = pystray.Icon("kelvex-agent", image, "Kelvex Agent", menu)
+
+    # Für die Installer (siehe webui/app.py's _LINUX_INSTALL_SH/_WINDOWS_INSTALL_BAT):
+    # lesen diese Datei vor dem Entpacken, um eine noch laufende Instanz sauber zu
+    # beenden -- robuster und plattformübergreifend einheitlicher als ein pkill -f-
+    # Substring-Match (das es unter Windows ohnehin nicht gibt).
+    try:
+        PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PID_FILE.write_text(str(os.getpid()))
+    except OSError:
+        pass
 
     agent_thread = threading.Thread(target=_agent_loop, args=(icon, root, config), daemon=True)
     agent_thread.start()

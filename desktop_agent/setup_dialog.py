@@ -190,6 +190,116 @@ def ask_core_url(parent: tk.Tk, initial: str = "", lang: str = "en") -> tuple[Op
     return result[0], current_lang.get()
 
 
+def ask_otp(parent: tk.Tk, lang: str = "en", error_key: Optional[str] = None) -> Optional[str]:
+    """Erststart-unabhängiges Entsperr-Fenster, das _open_settings() in tray.py VOR dem
+    eigentlichen ask_core_url()-Dialog zeigt, sobald der Agent bereits einmal
+    eingerichtet wurde (siehe tray.py::_verify_otp_threadsafe()). Gleiche Konventionen
+    wie ask_core_url() (niemals .transient(), -topmost statt dessen, wait_window()).
+    error_key zeigt optional eine Fehlermeldung an (z.B. nach einem falschen Code beim
+    erneuten Öffnen) -- None = keine Meldung. Rückgabe: eingegebener Code oder None bei
+    Abbruch."""
+    result: list[Optional[str]] = [None]
+    current_lang = tk.StringVar(value=lang)
+
+    dialog = tk.Toplevel(parent)
+    dialog.title(t("window.otp_title", lang))
+    dialog.iconphoto(False, _window_icon())
+    dialog.configure(bg=K_SURFACE, highlightthickness=1, highlightbackground=K_BORDER)
+    dialog.resizable(False, False)
+    dialog.attributes("-topmost", True)
+
+    body = tk.Frame(dialog, bg=K_SURFACE, padx=20, pady=16)
+    body.pack(fill="both", expand=True)
+
+    header_row = tk.Frame(body, bg=K_SURFACE)
+    header_row.pack(fill="x", anchor="w")
+    tk.Label(
+        header_row, text="KELVEX AGENT", bg=K_SURFACE, fg=K_TEXT,
+        font=("Consolas", 11, "bold"),
+    ).pack(side="left")
+    _lang_toggle_row(header_row, K_SURFACE, current_lang).pack(side="right")
+
+    prompt_var = tk.StringVar(value=t("otp.prompt", lang))
+    tk.Label(
+        body, textvariable=prompt_var, bg=K_SURFACE, fg=K_TEXT_MUT, font=("Consolas", 9),
+        wraplength=320, justify="left",
+    ).pack(anchor="w", pady=(10, 6))
+
+    error_var = tk.StringVar(value=t(error_key, lang) if error_key else "")
+    tk.Label(
+        body, textvariable=error_var, bg=K_SURFACE, fg="#C74B3E", font=("Consolas", 9),
+        wraplength=320, justify="left",
+    ).pack(anchor="w", pady=(0, 6))
+
+    entry_var = tk.StringVar(value="")
+    entry = tk.Entry(
+        body, textvariable=entry_var, bg=K_BG, fg=K_TEXT, insertbackground=K_TEXT,
+        relief="flat", highlightthickness=1, highlightbackground=K_BORDER,
+        highlightcolor=K_NORMAL, font=("Consolas", 14), width=12, justify="center",
+    )
+    entry.pack(ipady=4)
+    entry.focus_set()
+
+    button_row = tk.Frame(body, bg=K_SURFACE)
+    button_row.pack(fill="x", pady=(14, 0))
+
+    def _submit(_event=None) -> None:
+        value = entry_var.get().strip()
+        result[0] = value or None
+        dialog.destroy()
+
+    def _cancel(_event=None) -> None:
+        dialog.destroy()
+
+    cancel_var = tk.StringVar(value=t("settings.cancel", lang))
+    unlock_var = tk.StringVar(value=t("otp.unlock", lang))
+
+    tk.Button(
+        button_row, textvariable=cancel_var, command=_cancel, bg=K_SURFACE, fg=K_TEXT_MUT,
+        activebackground=K_BORDER, activeforeground=K_TEXT, relief="flat",
+        font=("Consolas", 9), padx=12, pady=4, highlightthickness=1,
+        highlightbackground=K_BORDER,
+    ).pack(side="right")
+    tk.Button(
+        button_row, textvariable=unlock_var, command=_submit, bg=K_NORMAL, fg=K_BG,
+        activebackground=K_TEXT, activeforeground=K_BG, relief="flat",
+        font=("Consolas", 9, "bold"), padx=12, pady=4,
+    ).pack(side="right", padx=(0, 8))
+
+    def _on_lang_change(*_args) -> None:
+        active = current_lang.get()
+        dialog.title(t("window.otp_title", active))
+        prompt_var.set(t("otp.prompt", active))
+        cancel_var.set(t("settings.cancel", active))
+        unlock_var.set(t("otp.unlock", active))
+        if error_key:
+            error_var.set(t(error_key, active))
+
+    current_lang.trace_add("write", _on_lang_change)
+
+    dialog.bind("<Return>", _submit)
+    dialog.bind("<Escape>", _cancel)
+    dialog.protocol("WM_DELETE_WINDOW", _cancel)
+
+    dialog.update_idletasks()
+    x = parent.winfo_screenwidth() // 2 - dialog.winfo_reqwidth() // 2
+    y = parent.winfo_screenheight() // 2 - dialog.winfo_reqheight() // 2
+    dialog.geometry(f"+{x}+{y}")
+
+    # Siehe ask_core_url() weiter oben: bewusst kein transient(parent), derselbe
+    # Windows-Sichtbarkeitsbug bei withdraw()ntem Owner-Fenster.
+    dialog.deiconify()
+    dialog.lift()
+    dialog.focus_force()
+    try:
+        dialog.grab_set()
+    except tk.TclError:
+        pass
+    parent.wait_window(dialog)
+
+    return result[0]
+
+
 def show_about(parent: tk.Tk, version: str, client_id: str, core_url: str, status: str, lang: str = "en") -> None:
     """Rein informativ, kein Rückgabewert -- kann daher per Fire-and-Forget über
     root.after(0, ...) aus einem pystray-Menü-Callback heraus angestoßen werden, ohne auf

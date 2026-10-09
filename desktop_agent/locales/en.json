@@ -1,13 +1,20 @@
 {
   "window": {
     "settings_title": "Kelvex Agent — Setup",
-    "about_title": "About Kelvex Agent"
+    "about_title": "About Kelvex Agent",
+    "otp_title": "Kelvex Agent — Unlock"
   },
   "settings": {
     "prompt": "Kelvex Core address (e.g. http://192.168.1.10:8822):",
     "language_label": "Language:",
     "save": "Save",
     "cancel": "Cancel"
+  },
+  "otp": {
+    "prompt": "Enter the one-time code generated in the Kelvex Core dashboard to unlock settings:",
+    "invalid_code": "Incorrect or expired code. Try again.",
+    "core_unreachable": "Kelvex Core is unreachable — settings cannot be unlocked right now.",
+    "unlock": "Unlock"
   },
   "about": {
     "status_label": "Status",
