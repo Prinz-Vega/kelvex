@@ -1,0 +1,53 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.sqlite
+.~lock.*#
+
+# Kelvex-Repo auf GitHub ist bewusst auf "Kelvex Core + Kelvex Agent" beschränkt --
+# alles unten bleibt lokal vorhanden (nichts wird gelöscht), ist aber nie Teil des
+# öffentlichen Quellcodes:
+#
+# 1) Archon-Erbe (geerbter Konsumenten-Assistent, aus dem Kelvex geforkt wurde) --
+#    bereits vollständig und unverändert in der separaten Shodan-Code-Basis gesichert,
+#    hier nur als mögliche spätere Grundlage für ein eigenständiges AI-Modul behalten.
+/CHANGELOG_ARCHON_CORE_HISTORY.md
+/ROADMAP.md
+/KELVEX_ROADMAP.md
+/CLAUDE.md
+/kelvex_network_agent/
+/locales/
+/assets/
+core/agent.py
+core/colibri_manager.py
+core/dependency_check.py
+core/hf_api.py
+core/i18n.py
+core/local_llm_setup.py
+core/logging_setup.py
+core/ollama_manager.py
+core/settings_tools.py
+core/llm/
+core/network/
+core/news/
+core/system/
+core/voice/
+core/security/warden.py
+core/memory/memory_manager.py
+
+# 2) Plesk-Deployment + öffentliche Marketing-Webseite -- Infrastruktur-/Hosting-Details,
+#    nicht Teil der eigentlichen Kelvex-Core/Agent-Anwendung.
+deploy/keys/
+deploy/config.py
+deploy/config.py.example
+deploy/release.py
+deploy/site/
+
+scripts/generate_sfx_elevenlabs.py
+
+.flatpak-builder/
+flatpak/.flatpak-builder/
+flatpak/repo/
+flatpak/build-dir/
+*.flatpak

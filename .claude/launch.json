@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "kelvex-site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8821", "--directory", "/home/prinzvega/Dokumente/Kelvex/deploy/site"],
+      "port": 8821
+    },
+    {
+      "name": "kelvex-dashboard",
+      "runtimeExecutable": "/home/prinzvega/Dokumente/Kelvex/.venv/bin/python",
+      "runtimeArgs": ["/home/prinzvega/Dokumente/Kelvex/webui/app.py"],
+      "port": 8822
+    }
+  ]
+}

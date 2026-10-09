@@ -1,0 +1,44 @@
+Kelvex Security Source-Available License v1.0
+Copyright (c) 2026 Kelvex Security. All rights reserved.
+
+1. Grant of Rights
+   Subject to the terms below, you are granted a worldwide, royalty-free,
+   non-exclusive license to view, download, compile, and modify the source
+   code in this repository for the following purposes only:
+     a) personal evaluation, testing, and security research;
+     b) internal, non-production use for up to one (1) monitored endpoint,
+        as governed by the free-tier license enforced by the software itself;
+     c) contributing changes back to this repository (see CONTRIBUTING, if
+        present).
+
+2. Commercial / Production Use
+   Any production deployment covering more than one (1) monitored endpoint,
+   or any commercial use, hosting, or redistribution of this software or a
+   derivative work, requires a valid, separately purchased license from
+   Kelvex Security. The software enforces this limit technically (see
+   core/licensing/); circumventing, disabling, or attempting to bypass that
+   enforcement is a violation of this license regardless of whether it
+   succeeds.
+
+3. Redistribution
+   You may not redistribute this software, in source or compiled form,
+   whether modified or unmodified, except as part of contributing back to
+   this repository under section 1(c).
+
+4. No Trademark License
+   This license does not grant rights to use the "Kelvex" name, logo, or
+   branding, except as required for attribution.
+
+5. No Warranty
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+   IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+   CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
+
+6. Termination
+   This license terminates automatically if you violate any of its terms.
+   Upon termination you must stop using and delete all copies of the
+   software you control.
+
+For a commercial license, contact Kelvex Security via https://kelvex.arrakiz.net.

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang() }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('updates.title') }}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="{{ url_for('static', filename='assets/tailwind-config.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/theme.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='assets/favicon.png') }}">
+</head>
+<body class="min-h-screen">
+
+    <header class="border-b border-k_border">
+        <div class="max-w-6xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
+            <img src="{{ url_for('static', filename='assets/kelvex_core.svg') }}" alt="Kelvex Core" class="h-9">
+            <nav class="flex items-center gap-5 text-sm font-gui text-k_text_mut">
+                <a href="/" class="hover:text-k_text">{{ t('nav.dashboard') }}</a>
+                <a href="/agents" class="hover:text-k_text flex items-center gap-1.5">
+                    <img src="{{ url_for('static', filename='assets/icons/icon_01_endpoint.svg') }}" alt="" class="h-3.5 w-3.5 opacity-70">
+                    {{ t('nav.agents') }}
+                </a>
+                <a href="/updates" class="text-k_text">{{ t('nav.updates') }}</a>
+                <a href="/licenses" class="hover:text-k_text">{{ t('nav.licenses') }}</a>
+            </nav>
+            <div class="flex items-center gap-1.5 font-mono text-xs">
+                <a href="/lang/en" class="{{ 'text-k_normal' if current_lang() == 'en' else 'text-k_text_mut hover:text-k_text' }}">EN</a>
+                <span class="text-k_border">/</span>
+                <a href="/lang/de" class="{{ 'text-k_normal' if current_lang() == 'de' else 'text-k_text_mut hover:text-k_text' }}">DE</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-3xl mx-auto px-4 md:px-8 py-10">
+        <h1 class="text-2xl font-gui font-semibold text-k_text mb-2">{{ t('updates.heading') }}</h1>
+        <p class="text-k_text_mut text-sm mb-8">{{ t('updates.description') }}</p>
+
+        <div id="restart-banner" class="hidden panel-container p-4 mb-6 border-l-2 !border-l-k_warn">
+            <p class="text-k_warn text-sm font-semibold mb-1">{{ t('updates.restart_required_banner') }}</p>
+            <code class="text-xs text-k_text font-mono">{{ t('updates.restart_windows_command') if is_windows else t('updates.restart_linux_command') }}</code>
+        </div>
+
+        <div class="panel-container">
+            <div class="panel-header"><div class="dot"></div> {{ t('updates.panel_header') }}</div>
+            <div class="p-5">
+                <div class="flex justify-between items-center mb-4 text-sm">
+                    <span class="text-k_text_mut">{{ t('updates.current_version_label') }}</span>
+                    <span class="font-mono text-k_text">{{ current_version }}</span>
+                </div>
+
+                <div id="check-result" class="text-sm text-k_text_mut mb-4"></div>
+
+                <div class="flex flex-wrap gap-3 mb-6">
+                    <button id="check-button" onclick="checkForUpdate()" class="border border-k_border text-k_text font-gui font-medium text-sm px-4 py-2 rounded-lg hover:bg-k_surface transition-colors">
+                        {{ t('updates.check_button') }}
+                    </button>
+                    <button id="apply-online-button" onclick="applyOnline()" class="hidden bg-k_normal text-k_bg font-gui font-semibold text-sm px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">
+                        {{ t('updates.apply_online_button') }}
+                    </button>
+                </div>
+
+                <div class="border-t border-k_border pt-4">
+                    <p class="text-xs text-k_text_mut mb-2">{{ t('updates.upload_label') }}</p>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <input id="upload-file" type="file" accept=".zip" class="text-xs text-k_text_mut">
+                        <button onclick="applyUpload()" class="border border-k_border text-k_text font-gui font-medium text-sm px-4 py-2 rounded-lg hover:bg-k_surface transition-colors">
+                            {{ t('updates.upload_button') }}
+                        </button>
+                    </div>
+                </div>
+
+                <div id="apply-result" class="text-sm mt-4"></div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const I18N = {
+            checking: {{ t('updates.checking')|tojson }},
+            upToDate: {{ t('updates.up_to_date')|tojson }},
+            updateAvailable: {{ t('updates.update_available')|tojson }},
+            applying: {{ t('updates.applying')|tojson }},
+            applySuccess: {{ t('updates.apply_success')|tojson }},
+            applyError: {{ t('updates.apply_error')|tojson }},
+        };
+
+        async function checkForUpdate() {
+            const resultEl = document.getElementById('check-result');
+            const applyBtn = document.getElementById('apply-online-button');
+            resultEl.textContent = I18N.checking;
+            applyBtn.classList.add('hidden');
+            try {
+                const res = await fetch('/api/core/update/check');
+                const data = await res.json();
+                if (data.available) {
+                    resultEl.textContent = I18N.updateAvailable.replace('{version}', data.version);
+                    applyBtn.classList.remove('hidden');
+                } else {
+                    resultEl.textContent = I18N.upToDate;
+                }
+            } catch (e) {
+                resultEl.textContent = `${I18N.applyError} ${e}`;
+            }
+        }
+
+        function showApplyResult(ok, message) {
+            const resultEl = document.getElementById('apply-result');
+            resultEl.className = ok ? 'text-sm mt-4 text-k_normal' : 'text-sm mt-4 text-k_crit';
+            resultEl.textContent = message;
+            if (ok) document.getElementById('restart-banner').classList.remove('hidden');
+        }
+
+        async function applyOnline() {
+            document.getElementById('apply-result').textContent = I18N.applying;
+            try {
+                const res = await fetch('/api/core/update/apply-online', { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    showApplyResult(true, I18N.applySuccess.replace('{version}', data.applied_version));
+                } else {
+                    showApplyResult(false, `${I18N.applyError} ${data.error}`);
+                }
+            } catch (e) {
+                showApplyResult(false, `${I18N.applyError} ${e}`);
+            }
+        }
+
+        async function applyUpload() {
+            const fileInput = document.getElementById('upload-file');
+            if (!fileInput.files.length) return;
+            document.getElementById('apply-result').textContent = I18N.applying;
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            try {
+                const res = await fetch('/api/core/update/apply-upload', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.ok) {
+                    showApplyResult(true, I18N.applySuccess.replace('{version}', data.applied_version));
+                } else {
+                    showApplyResult(false, `${I18N.applyError} ${data.error}`);
+                }
+            } catch (e) {
+                showApplyResult(false, `${I18N.applyError} ${e}`);
+            }
+        }
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,41 @@
+{
+  "window": {
+    "settings_title": "Kelvex Agent — Setup",
+    "about_title": "About Kelvex Agent"
+  },
+  "settings": {
+    "prompt": "Kelvex Core address (e.g. http://192.168.1.10:8822):",
+    "language_label": "Language:",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
+  "about": {
+    "status_label": "Status",
+    "core_label": "Kelvex Core",
+    "client_id_label": "Client ID",
+    "not_configured": "(not configured)",
+    "close": "Close"
+  },
+  "popup": {
+    "unknown_process": "(unknown process)",
+    "more": "+{n} more"
+  },
+  "menu": {
+    "dashboard": "Open Dashboard",
+    "pause": "Pause Monitoring",
+    "resume": "Resume Monitoring",
+    "settings": "Settings…",
+    "about": "About Kelvex Agent",
+    "quit": "Quit"
+  },
+  "status": {
+    "starting": "Kelvex Agent — Starting…",
+    "active": "Kelvex Agent — Active",
+    "unreachable": "Kelvex Agent — Core unreachable",
+    "pending": "Kelvex Agent — Awaiting approval",
+    "reregistering": "Kelvex Agent — Token invalid, re-registering…"
+  },
+  "cli": {
+    "no_core_url": "No Kelvex Core address provided -- agent is exiting."
+  }
+}

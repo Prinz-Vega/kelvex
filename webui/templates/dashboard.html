@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang() }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('dashboard.title') }}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="{{ url_for('static', filename='assets/tailwind-config.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/theme.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='assets/favicon.png') }}">
+</head>
+<body class="min-h-screen">
+
+    <header class="border-b border-k_border">
+        <div class="max-w-6xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
+            <img src="{{ url_for('static', filename='assets/kelvex_core.svg') }}" alt="Kelvex Core" class="h-9">
+            <nav class="flex items-center gap-5 text-sm font-gui text-k_text_mut">
+                <a href="/" class="text-k_text">{{ t('nav.dashboard') }}</a>
+                <a href="/agents" class="hover:text-k_text flex items-center gap-1.5">
+                    <img src="{{ url_for('static', filename='assets/icons/icon_01_endpoint.svg') }}" alt="" class="h-3.5 w-3.5 opacity-70">
+                    {{ t('nav.agents') }}
+                </a>
+                <a href="/updates" class="hover:text-k_text">{{ t('nav.updates') }}</a>
+                <a href="/licenses" class="hover:text-k_text">{{ t('nav.licenses') }}</a>
+            </nav>
+            <div class="flex items-center gap-4">
+                <div class="inline-flex items-center gap-2 font-mono text-xs uppercase tracking-wide text-k_text_mut border border-k_border rounded-full px-3 py-1">
+                    <img src="{{ url_for('static', filename='assets/icons/icon_08_alert.svg') }}" alt="" class="h-3.5 w-3.5">
+                    {{ t('dashboard.phase_badge') }}
+                </div>
+                <div class="flex items-center gap-1.5 font-mono text-xs">
+                    <a href="/lang/en" class="{{ 'text-k_normal' if current_lang() == 'en' else 'text-k_text_mut hover:text-k_text' }}">EN</a>
+                    <span class="text-k_border">/</span>
+                    <a href="/lang/de" class="{{ 'text-k_normal' if current_lang() == 'de' else 'text-k_text_mut hover:text-k_text' }}">DE</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 md:px-8 py-10">
+        <h1 class="text-2xl font-gui font-semibold text-k_text mb-2">{{ t('dashboard.heading') }}</h1>
+        <p class="text-k_text_mut text-sm mb-8">
+            {{ t('dashboard.description').format(seconds=refresh_seconds) }}
+        </p>
+
+        <div class="panel-container">
+            <div class="panel-header"><div class="dot"></div> {{ t('dashboard.panel_header') }}</div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs whitespace-nowrap">
+                    <thead class="border-b border-k_border text-k_text_mut font-mono">
+                        <tr>
+                            <th class="py-2 px-4 font-normal">{{ t('dashboard.col_last_seen') }}</th>
+                            <th class="py-2 px-4 font-normal">{{ t('dashboard.col_source') }}</th>
+                            <th class="py-2 px-4 font-normal">{{ t('dashboard.col_process') }}</th>
+                            <th class="py-2 px-4 font-normal">{{ t('dashboard.col_service') }}</th>
+                            <th class="py-2 px-4 font-normal">{{ t('dashboard.col_target') }}</th>
+                            <th class="py-2 px-4 font-normal">{{ t('dashboard.col_hits') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detections-body" class="font-mono">
+                        <tr><td colspan="6" class="py-6 px-4 text-k_text_mut">{{ t('dashboard.loading') }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const REFRESH_MS = {{ refresh_seconds }} * 1000;
+        const I18N = {
+            empty: {{ t('dashboard.empty')|tojson }},
+            thisMachine: {{ t('dashboard.this_machine')|tojson }},
+            unknownProcess: {{ t('dashboard.unknown_process')|tojson }},
+            loadError: {{ t('dashboard.load_error')|tojson }},
+        };
+
+        function fmtTime(unixSeconds) {
+            const d = new Date(unixSeconds * 1000);
+            return d.toISOString().replace('T', ' ').slice(0, 19);
+        }
+
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s ?? '';
+            return div.innerHTML;
+        }
+
+        function fmtTarget(ip, port) {
+            // IPv6-Adressen in eckige Klammern -- sonst z.B. "2001:...::10:443" (vier
+            // Doppelpunkte in Folge), nicht eindeutig von Adresse/Port zu unterscheiden.
+            return ip.includes(':') ? `[${ip}]:${port}` : `${ip}:${port}`;
+        }
+
+        async function refresh() {
+            try {
+                const res = await fetch('/api/detections');
+                const data = await res.json();
+                const body = document.getElementById('detections-body');
+                if (!data.detections || data.detections.length === 0) {
+                    body.innerHTML = `<tr><td colspan="6" class="py-6 px-4 text-k_text_mut">${escapeHtml(I18N.empty)}</td></tr>`;
+                    return;
+                }
+                body.innerHTML = data.detections.map(d => `
+                    <tr class="border-b border-k_border last:border-0">
+                        <td class="py-3 px-4 text-k_text_mut">${escapeHtml(fmtTime(d.last_seen))}</td>
+                        <td class="py-3 px-4 text-k_text_mut">${escapeHtml(d.source_hostname || I18N.thisMachine)}</td>
+                        <td class="py-3 px-4 text-k_text">${escapeHtml(d.process_name || I18N.unknownProcess)}</td>
+                        <td class="py-3 px-4"><span class="badge-normal">${escapeHtml(d.service)}</span></td>
+                        <td class="py-3 px-4 text-k_text_mut">${escapeHtml(fmtTarget(d.remote_ip, d.remote_port))}</td>
+                        <td class="py-3 px-4 text-k_text">${d.hits}</td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                console.error(I18N.loadError, e);
+            }
+        }
+
+        refresh();
+        setInterval(refresh, REFRESH_MS);
+    </script>
+
+</body>
+</html>

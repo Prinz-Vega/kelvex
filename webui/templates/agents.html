@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang() }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('agents.title') }}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="{{ url_for('static', filename='assets/tailwind-config.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/theme.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='assets/favicon.png') }}">
+</head>
+<body class="min-h-screen">
+
+    <header class="border-b border-k_border">
+        <div class="max-w-6xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
+            <img src="{{ url_for('static', filename='assets/kelvex_core.svg') }}" alt="Kelvex Core" class="h-9">
+            <nav class="flex items-center gap-5 text-sm font-gui text-k_text_mut">
+                <a href="/" class="hover:text-k_text">{{ t('nav.dashboard') }}</a>
+                <a href="/agents" class="text-k_text flex items-center gap-1.5">
+                    <img src="{{ url_for('static', filename='assets/icons/icon_01_endpoint.svg') }}" alt="" class="h-3.5 w-3.5">
+                    {{ t('nav.agents') }}
+                </a>
+                <a href="/updates" class="hover:text-k_text">{{ t('nav.updates') }}</a>
+                <a href="/licenses" class="hover:text-k_text">{{ t('nav.licenses') }}</a>
+            </nav>
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <a href="/install/linux" class="bg-k_normal text-k_bg font-gui font-semibold text-xs px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">
+                        {{ t('nav.download_linux') }}
+                    </a>
+                    <a href="/install/windows" class="bg-k_normal text-k_bg font-gui font-semibold text-xs px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">
+                        {{ t('nav.download_windows') }}
+                    </a>
+                </div>
+                <div class="flex items-center gap-1.5 font-mono text-xs">
+                    <a href="/lang/en" class="{{ 'text-k_normal' if current_lang() == 'en' else 'text-k_text_mut hover:text-k_text' }}">EN</a>
+                    <span class="text-k_border">/</span>
+                    <a href="/lang/de" class="{{ 'text-k_normal' if current_lang() == 'de' else 'text-k_text_mut hover:text-k_text' }}">DE</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 md:px-8 py-10">
+        <h1 class="text-2xl font-gui font-semibold text-k_text mb-2">{{ t('agents.heading') }}</h1>
+        <p class="text-k_text_mut text-sm mb-8">
+            {{ t('agents.description').format(pending='<span class="badge-warn">' + t('agents.pending_badge') + '</span>')|safe }}
+        </p>
+
+        <div class="panel-container">
+            <div class="panel-header"><div class="dot"></div> {{ t('agents.panel_header') }}</div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs whitespace-nowrap">
+                    <thead class="border-b border-k_border text-k_text_mut font-mono">
+                        <tr>
+                            <th class="py-2 px-4 font-normal">{{ t('agents.col_hostname') }}</th>
+                            <th class="py-2 px-4 font-normal">{{ t('agents.col_status') }}</th>
+                            <th class="py-2 px-4 font-normal">{{ t('agents.col_requested') }}</th>
+                            <th class="py-2 px-4 font-normal">{{ t('agents.col_last_seen') }}</th>
+                            <th class="py-2 px-4 font-normal">{{ t('agents.col_push') }}</th>
+                            <th class="py-2 px-4 font-normal">{{ t('agents.col_otp') }}</th>
+                            <th class="py-2 px-4 font-normal"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="agents-body" class="font-mono">
+                        <tr><td colspan="7" class="py-6 px-4 text-k_text_mut">{{ t('agents.loading') }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const I18N = {
+            empty: {{ t('agents.empty')|tojson }},
+            actionApprove: {{ t('agents.action_approve')|tojson }},
+            actionRevoke: {{ t('agents.action_revoke')|tojson }},
+            loadError: {{ t('agents.load_error')|tojson }},
+            pushButton: {{ t('agents.push_button')|tojson }},
+            pushPendingBadge: {{ t('agents.push_pending_badge')|tojson }},
+            pushClearButton: {{ t('agents.push_clear_button')|tojson }},
+            pushError: {{ t('agents.push_error')|tojson }},
+            otpGenerateButton: {{ t('agents.otp_generate_button')|tojson }},
+            otpCodeLabel: {{ t('agents.otp_code_label')|tojson }},
+            otpExpiresLabel: {{ t('agents.otp_expires_label')|tojson }},
+            otpExpired: {{ t('agents.otp_expired')|tojson }},
+            otpError: {{ t('agents.otp_error')|tojson }},
+        };
+
+        // In-Memory, nicht persistiert -- ein Seiten-Reload setzt angezeigte OTP-Codes
+        // zurück (der Code selbst bleibt serverseitig bis zum Ablauf gültig, nur die
+        // Anzeige hier geht verloren, was für ein Einmalkennwort unproblematisch ist).
+        const otpDisplay = {};  // agentId -> { code, expiresAt }
+
+        function fmtTime(unixSeconds) {
+            if (!unixSeconds) return '—';
+            const d = new Date(unixSeconds * 1000);
+            return d.toISOString().replace('T', ' ').slice(0, 19);
+        }
+
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s ?? '';
+            return div.innerHTML;
+        }
+
+        function statusBadge(status) {
+            if (status === 'approved') return `<span class="badge-normal">${status}</span>`;
+            if (status === 'revoked') return `<span class="badge-crit">${status}</span>`;
+            return `<span class="badge-warn">${status}</span>`;
+        }
+
+        async function approve(id) {
+            await fetch(`/api/agents/${id}/approve`, { method: 'POST' });
+            refresh();
+        }
+
+        async function revoke(id) {
+            await fetch(`/api/agents/${id}/revoke`, { method: 'POST' });
+            refresh();
+        }
+
+        async function pushConfig(id) {
+            const select = document.getElementById(`push-lang-${id}`);
+            try {
+                await fetch(`/api/agents/${id}/push-config`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ language: select.value }),
+                });
+                refresh();
+            } catch (e) {
+                console.error(I18N.pushError, e);
+            }
+        }
+
+        async function clearPushConfig(id) {
+            await fetch(`/api/agents/${id}/push-config/clear`, { method: 'POST' });
+            refresh();
+        }
+
+        async function generateOtp(id) {
+            try {
+                const res = await fetch(`/api/agents/${id}/otp`, { method: 'POST' });
+                const data = await res.json();
+                otpDisplay[id] = { code: data.code, expiresAt: data.expires_at };
+                renderOtpCells();
+            } catch (e) {
+                console.error(I18N.otpError, e);
+            }
+        }
+
+        function otpCellHtml(id) {
+            const entry = otpDisplay[id];
+            if (!entry) {
+                return `<button onclick="generateOtp(${id})" class="text-k_normal hover:underline">${escapeHtml(I18N.otpGenerateButton)}</button>`;
+            }
+            const remaining = Math.round(entry.expiresAt - Date.now() / 1000);
+            if (remaining <= 0) {
+                delete otpDisplay[id];
+                return `<button onclick="generateOtp(${id})" class="text-k_normal hover:underline">${escapeHtml(I18N.otpGenerateButton)}</button>`;
+            }
+            return `<span class="text-k_text">${escapeHtml(I18N.otpCodeLabel.replace('{code}', entry.code))}</span> `
+                + `<span class="text-k_text_mut">(${escapeHtml(I18N.otpExpiresLabel.replace('{seconds}', remaining))})</span>`;
+        }
+
+        function pushCellHtml(a) {
+            const select = `<select id="push-lang-${a.id}" class="bg-k_bg border border-k_border rounded px-1 py-0.5 text-k_text">`
+                + `<option value="en">en</option><option value="de">de</option></select>`;
+            const button = `<button onclick="pushConfig(${a.id})" class="text-k_normal hover:underline ml-1">${escapeHtml(I18N.pushButton)}</button>`;
+            let pending = '';
+            if (a.pending_config && a.pending_config.language) {
+                const badge = escapeHtml(I18N.pushPendingBadge.replace('{setting}', a.pending_config.language));
+                pending = `<div class="text-k_warn text-[10px] mt-1">${badge} `
+                    + `<a href="#" onclick="clearPushConfig(${a.id}); return false;" class="hover:underline">${escapeHtml(I18N.pushClearButton)}</a></div>`;
+            }
+            return `${select}${button}${pending}`;
+        }
+
+        // Nur die OTP-Zellen neu rendern (nicht die ganze Tabelle) -- läuft jede Sekunde
+        // für den Live-Countdown, ohne die bestehende 10s-Netzwerk-refresh()-Schleife zu
+        // stören.
+        function renderOtpCells() {
+            for (const id of Object.keys(otpDisplay)) {
+                const cell = document.getElementById(`otp-cell-${id}`);
+                if (cell) cell.innerHTML = otpCellHtml(Number(id));
+            }
+        }
+
+        async function refresh() {
+            try {
+                const res = await fetch('/api/agents');
+                const data = await res.json();
+                const body = document.getElementById('agents-body');
+                if (!data.agents || data.agents.length === 0) {
+                    body.innerHTML = `<tr><td colspan="7" class="py-6 px-4 text-k_text_mut">${escapeHtml(I18N.empty)}</td></tr>`;
+                    return;
+                }
+                body.innerHTML = data.agents.map(a => {
+                    a.pending_config = a.pending_config_json ? JSON.parse(a.pending_config_json) : null;
+                    const action = a.status === 'approved'
+                        ? `<button onclick="revoke(${a.id})" class="text-k_crit hover:underline">${escapeHtml(I18N.actionRevoke)}</button>`
+                        : a.status === 'pending'
+                            ? `<button onclick="approve(${a.id})" class="text-k_normal hover:underline">${escapeHtml(I18N.actionApprove)}</button>`
+                            : '';
+                    const pushCell = a.status === 'approved' ? pushCellHtml(a) : '—';
+                    const otpCell = a.status === 'approved' ? otpCellHtml(a.id) : '—';
+                    return `
+                    <tr class="border-b border-k_border last:border-0">
+                        <td class="py-3 px-4 text-k_text">${escapeHtml(a.hostname)}</td>
+                        <td class="py-3 px-4">${statusBadge(a.status)}</td>
+                        <td class="py-3 px-4 text-k_text_mut">${escapeHtml(fmtTime(a.requested_at))}</td>
+                        <td class="py-3 px-4 text-k_text_mut">${escapeHtml(fmtTime(a.last_seen))}</td>
+                        <td class="py-3 px-4">${pushCell}</td>
+                        <td class="py-3 px-4" id="otp-cell-${a.id}">${otpCell}</td>
+                        <td class="py-3 px-4">${action}</td>
+                    </tr>
+                `;
+                }).join('');
+            } catch (e) {
+                console.error(I18N.loadError, e);
+            }
+        }
+
+        refresh();
+        setInterval(refresh, 10000);
+        setInterval(renderOtpCells, 1000);
+    </script>
+
+</body>
+</html>

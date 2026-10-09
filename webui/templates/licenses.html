@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="{{ current_lang() }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('licenses.title') }}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="{{ url_for('static', filename='assets/tailwind-config.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='assets/theme.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='assets/favicon.png') }}">
+</head>
+<body class="min-h-screen">
+
+    <header class="border-b border-k_border">
+        <div class="max-w-6xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
+            <img src="{{ url_for('static', filename='assets/kelvex_core.svg') }}" alt="Kelvex Core" class="h-9">
+            <nav class="flex items-center gap-5 text-sm font-gui text-k_text_mut">
+                <a href="/" class="hover:text-k_text">{{ t('nav.dashboard') }}</a>
+                <a href="/agents" class="hover:text-k_text flex items-center gap-1.5">
+                    <img src="{{ url_for('static', filename='assets/icons/icon_01_endpoint.svg') }}" alt="" class="h-3.5 w-3.5 opacity-70">
+                    {{ t('nav.agents') }}
+                </a>
+                <a href="/updates" class="hover:text-k_text">{{ t('nav.updates') }}</a>
+                <a href="/licenses" class="text-k_text">{{ t('nav.licenses') }}</a>
+            </nav>
+            <div class="flex items-center gap-1.5 font-mono text-xs">
+                <a href="/lang/en" class="{{ 'text-k_normal' if current_lang() == 'en' else 'text-k_text_mut hover:text-k_text' }}">EN</a>
+                <span class="text-k_border">/</span>
+                <a href="/lang/de" class="{{ 'text-k_normal' if current_lang() == 'de' else 'text-k_text_mut hover:text-k_text' }}">DE</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-3xl mx-auto px-4 md:px-8 py-10">
+        <h1 class="text-2xl font-gui font-semibold text-k_text mb-2">{{ t('licenses.heading') }}</h1>
+        <p class="text-k_text_mut text-sm mb-8">{{ t('licenses.description') }}</p>
+
+        <div class="panel-container mb-6">
+            <div class="panel-header"><div class="dot"></div> {{ t('licenses.panel_header_hardware') }}</div>
+            <div class="p-5">
+                <p class="text-xs text-k_text_mut mb-2">{{ t('licenses.hardware_id_label') }}</p>
+                <div class="flex items-center gap-3">
+                    <code id="hardware-id" class="text-xs text-k_text font-mono bg-k_bg border border-k_border rounded px-3 py-2 flex-grow break-all">…</code>
+                    <button onclick="copyHardwareId()" class="border border-k_border text-k_text font-gui text-xs px-3 py-2 rounded-lg hover:bg-k_surface transition-colors shrink-0">
+                        {{ t('licenses.copy_button') }}
+                    </button>
+                </div>
+                <p id="copy-feedback" class="text-xs text-k_normal mt-2 hidden">{{ t('licenses.copy_success') }}</p>
+            </div>
+        </div>
+
+        <div class="panel-container mb-6">
+            <div class="panel-header"><div class="dot"></div> {{ t('licenses.panel_header_status') }}</div>
+            <div class="p-5" id="status-panel">
+                <p class="text-sm text-k_text_mut">{{ t('updates.checking') }}</p>
+            </div>
+        </div>
+
+        <div class="panel-container mb-6">
+            <div class="panel-header"><div class="dot"></div> {{ t('licenses.panel_header_activate') }}</div>
+            <div class="p-5">
+                <textarea id="activate-textarea" rows="6" placeholder="{{ t('licenses.paste_placeholder') }}"
+                    class="w-full bg-k_bg border border-k_border rounded px-3 py-2 text-xs font-mono text-k_text"></textarea>
+                <div class="flex flex-wrap items-center gap-3 mt-3">
+                    <p class="text-xs text-k_text_mut">{{ t('licenses.upload_label') }}</p>
+                    <input id="activate-file" type="file" accept=".json" class="text-xs text-k_text_mut">
+                </div>
+                <button onclick="activateLicense()" class="bg-k_normal text-k_bg font-gui font-semibold text-sm px-4 py-2 rounded-lg hover:opacity-90 transition-opacity mt-4">
+                    {{ t('licenses.activate_button') }}
+                </button>
+                <div id="activate-result" class="text-sm mt-3"></div>
+            </div>
+        </div>
+
+        <div class="panel-container">
+            <div class="panel-header"><div class="dot"></div> {{ t('licenses.panel_header_modules') }}</div>
+            <div class="p-5">
+                <p class="text-xs text-k_text_mut" id="modules-list">{{ t('licenses.modules_coming_soon') }}</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const I18N = {
+            copySuccess: {{ t('licenses.copy_success')|tojson }},
+            freeTier: {{ t('licenses.free_tier_label')|tojson }},
+            statusValid: {{ t('licenses.status_valid_label')|tojson }},
+            statusInvalidSignature: {{ t('licenses.status_invalid_signature')|tojson }},
+            statusHardwareMismatch: {{ t('licenses.status_hardware_mismatch')|tojson }},
+            statusExpired: {{ t('licenses.status_expired')|tojson }},
+            statusMalformed: {{ t('licenses.status_malformed')|tojson }},
+            statusBanned: {{ t('licenses.status_banned')|tojson }},
+            licenseTypeLabel: {{ t('licenses.license_type_label')|tojson }},
+            seatsLabel: {{ t('licenses.seats_label')|tojson }},
+            agentsUsedLabel: {{ t('licenses.agents_used_label')|tojson }},
+            expiresLabel: {{ t('licenses.expires_label')|tojson }},
+            daysRemainingLabel: {{ t('licenses.days_remaining_label')|tojson }},
+            modulesLabel: {{ t('licenses.modules_label')|tojson }},
+            modulesNone: {{ t('licenses.modules_none')|tojson }},
+            modulesComingSoon: {{ t('licenses.modules_coming_soon')|tojson }},
+            deactivateButton: {{ t('licenses.deactivate_button')|tojson }},
+            deactivateConfirm: {{ t('licenses.deactivate_confirm')|tojson }},
+            activateSuccess: {{ t('licenses.activate_success')|tojson }},
+            activateError: {{ t('licenses.activate_error')|tojson }},
+        };
+
+        function copyHardwareId() {
+            const id = document.getElementById('hardware-id').textContent;
+            navigator.clipboard.writeText(id);
+            const feedback = document.getElementById('copy-feedback');
+            feedback.classList.remove('hidden');
+            setTimeout(() => feedback.classList.add('hidden'), 2000);
+        }
+
+        function fmtDate(unixSeconds) {
+            return new Date(unixSeconds * 1000).toISOString().slice(0, 10);
+        }
+
+        async function deactivateLicense() {
+            if (!confirm(I18N.deactivateConfirm)) return;
+            await fetch('/api/license/deactivate', { method: 'POST' });
+            loadStatus();
+        }
+
+        function renderStatus(data) {
+            const panel = document.getElementById('status-panel');
+
+            if (data.banned) {
+                panel.innerHTML = `<p class="text-k_crit text-sm">${I18N.statusBanned}</p>`;
+                return;
+            }
+
+            if (data.status === 'no_license') {
+                panel.innerHTML = `<p class="text-k_text_mut text-sm">${I18N.freeTier}</p>`
+                    + `<p class="text-xs text-k_text_mut mt-2">${I18N.agentsUsedLabel.replace('{used}', data.agents_used).replace('{total}', data.seat_limit)}</p>`;
+                return;
+            }
+
+            const statusMessages = {
+                invalid_signature: I18N.statusInvalidSignature,
+                hardware_mismatch: I18N.statusHardwareMismatch,
+                expired: I18N.statusExpired,
+                malformed: I18N.statusMalformed,
+            };
+
+            if (data.status !== 'valid') {
+                panel.innerHTML = `<p class="text-k_warn text-sm">${statusMessages[data.status] || data.status}</p>`;
+                return;
+            }
+
+            const lic = data.license;
+            const modules = (lic.modules && lic.modules.length) ? lic.modules.join(', ') : I18N.modulesNone;
+            panel.innerHTML = `
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="badge-normal">${I18N.statusValid}</span>
+                    <span class="text-xs text-k_text_mut font-mono">${lic.license_type}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-3 text-sm mb-4">
+                    <div><span class="text-k_text_mut text-xs">${I18N.seatsLabel}</span><br>
+                        <span class="text-k_text font-mono">${I18N.agentsUsedLabel.replace('{used}', data.agents_used).replace('{total}', data.seat_limit)}</span></div>
+                    <div><span class="text-k_text_mut text-xs">${I18N.expiresLabel}</span><br>
+                        <span class="text-k_text font-mono">${fmtDate(lic.expires_at)} (${I18N.daysRemainingLabel.replace('{days}', data.days_remaining)})</span></div>
+                    <div class="col-span-2"><span class="text-k_text_mut text-xs">${I18N.modulesLabel}</span><br>
+                        <span class="text-k_text font-mono">${modules}</span></div>
+                </div>
+                <button onclick="deactivateLicense()" class="border border-k_border text-k_crit font-gui text-xs px-3 py-2 rounded-lg hover:bg-k_surface transition-colors">
+                    ${I18N.deactivateButton}
+                </button>
+            `;
+        }
+
+        async function loadStatus() {
+            const res = await fetch('/api/license/status');
+            const data = await res.json();
+            document.getElementById('hardware-id').textContent = data.hardware_id || '—';
+            renderStatus(data);
+        }
+
+        document.getElementById('activate-file').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => { document.getElementById('activate-textarea').value = reader.result; };
+            reader.readAsText(file);
+        });
+
+        async function activateLicense() {
+            const raw = document.getElementById('activate-textarea').value.trim();
+            const resultEl = document.getElementById('activate-result');
+            if (!raw) return;
+            let data;
+            try {
+                data = JSON.parse(raw);
+            } catch (e) {
+                resultEl.className = 'text-sm mt-3 text-k_crit';
+                resultEl.textContent = `${I18N.activateError} ${e}`;
+                return;
+            }
+            try {
+                const res = await fetch('/api/license/activate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                const result = await res.json();
+                if (result.ok) {
+                    resultEl.className = 'text-sm mt-3 text-k_normal';
+                    resultEl.textContent = I18N.activateSuccess;
+                    document.getElementById('activate-textarea').value = '';
+                    loadStatus();
+                } else {
+                    resultEl.className = 'text-sm mt-3 text-k_crit';
+                    resultEl.textContent = `${I18N.activateError} ${result.error}`;
+                }
+            } catch (e) {
+                resultEl.className = 'text-sm mt-3 text-k_crit';
+                resultEl.textContent = `${I18N.activateError} ${e}`;
+            }
+        }
+
+        loadStatus();
+    </script>
+
+</body>
+</html>

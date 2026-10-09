@@ -1,0 +1,41 @@
+{
+  "window": {
+    "settings_title": "Kelvex Agent — Einrichtung",
+    "about_title": "Über Kelvex Agent"
+  },
+  "settings": {
+    "prompt": "Adresse von Kelvex Core (z.B. http://192.168.1.10:8822):",
+    "language_label": "Sprache:",
+    "save": "Speichern",
+    "cancel": "Abbrechen"
+  },
+  "about": {
+    "status_label": "Status",
+    "core_label": "Kelvex Core",
+    "client_id_label": "Client-ID",
+    "not_configured": "(nicht eingerichtet)",
+    "close": "Schließen"
+  },
+  "popup": {
+    "unknown_process": "(unbekannter Prozess)",
+    "more": "+{n} weitere"
+  },
+  "menu": {
+    "dashboard": "Dashboard öffnen",
+    "pause": "Überwachung pausieren",
+    "resume": "Überwachung fortsetzen",
+    "settings": "Einstellungen…",
+    "about": "Über Kelvex Agent",
+    "quit": "Beenden"
+  },
+  "status": {
+    "starting": "Kelvex Agent — Startet…",
+    "active": "Kelvex Agent — Aktiv",
+    "unreachable": "Kelvex Agent — Core nicht erreichbar",
+    "pending": "Kelvex Agent — Warte auf Freigabe",
+    "reregistering": "Kelvex Agent — Token ungültig, registriere neu…"
+  },
+  "cli": {
+    "no_core_url": "Keine Kelvex-Core-Adresse angegeben -- Agent wird beendet."
+  }
+}

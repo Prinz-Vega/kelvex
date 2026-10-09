@@ -1,0 +1,5 @@
+keys/
+*.zip
+# Privates GUI-Tool zum Ausstellen von Lizenzen/Entsperr-Zertifikaten -- bewusst nicht
+# auf GitHub, nur für den Entwickler (siehe license_tool.py-Docstring).
+license_gui.py
